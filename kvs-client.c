@@ -2,7 +2,10 @@
 /*******************************
  * kvs - server のクライアント *
  *******************************/
-
+#include "hash_ring.h"
+#include "sha1.h"
+#include "md5.h"
+#include "sort.h"
 #include "wrapunix.h"
 
 #define HOST_NAME "localhost"
@@ -99,8 +102,26 @@ int main(int argc, char **argv) {
       return 1;
     }
   }
-  
-  connfd = conn_new();
-  process(connfd);
+
+	hash_ring_t *ring = hash_ring_create(8, HASH_FUNCTION_SHA1);
+	char *slotA = "slotA";
+	char *slotB = "slotB";
+
+	char *keyA = "keyA";
+	char *keyB = "keyBBBB";
+	char *keyC = "keyB_";
+
+	hash_ring_node_t *node;
+
+	assert(hash_ring_add_node(ring, (uint8_t*)slotA, strlen(slotA)) == HASH_RING_OK);
+	assert(hash_ring_add_node(ring, (uint8_t*)slotB, strlen(slotB)) == HASH_RING_OK);
+
+
+	node = hash_ring_find_node(ring, (uint8_t*)keyA, strlen(keyA));
+	assert(node != NULL && node->nameLen == strlen(slotA) && memcmp(node->name, slotA, strlen(slotA)) == 0);
+
+	printf("udonmai\n", keyB);
+  //connfd = conn_new();
+  //process(connfd);
   return 0;
 }
