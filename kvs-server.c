@@ -224,6 +224,8 @@ void message_init(client_t *client, int connfd) {
   client->argc = 0;
   client->connfd = connfd;
   client->fin_flg = false;
+
+  printf("%d is connected.\n", connfd);
 }
 
 /* メッセージを取得 */
@@ -271,6 +273,8 @@ void message_parse(client_t *client) {
 void message_send(client_t *client) {
   if (client->sendline != NULL) {
     write(client->connfd, client->sendline, strlen(client->sendline));
+	printf("%s on %d\n", client->sendline, client->connfd);
+	printf("receive %s \n", client->recvline);
   }
 }
 
@@ -348,7 +352,7 @@ void usage() {
 
 int main(int argc, char *argv[]) {
   struct sockaddr_in *cliaddr = NULL;
-  int listenfd;
+  int listenfd, i = 0;
   int *connfd = NULL;
   socklen_t len;
   pthread_t tid;
@@ -388,6 +392,8 @@ int main(int argc, char *argv[]) {
     connfd = malloc(sizeof(int));
     *connfd = Accept(listenfd, NULL, NULL);
     Pthread_create(&tid, NULL, &process, connfd);
+	i++;
+	printf("%d\n", i);
   }
   arr_free();
   return 0;
