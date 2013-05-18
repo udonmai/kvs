@@ -3,6 +3,7 @@
  * kvs - server のクライアント *
  *******************************/
 
+#include <string.h>
 #include "hash_ring.h"
 #include "sha1.h"
 #include "md5.h"
@@ -10,12 +11,13 @@
 #include "wrapunix.h"
 
 #define HOST_NAME "localhost"
+#define LINE 1024
 
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+//pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 int sockfd;
 volatile int socknum = 0;
-static int num = 0;
 static int sockfds[256] = {0};
+char servlist[256][24];
 
 void *send_msg(void *arg);
 void *process(void *arg);
@@ -35,7 +37,7 @@ struct {
 
 struct thread_p {
   int threadnum;
-  char* addr;
+  char *addr;
   int port;
 };
 
@@ -49,6 +51,7 @@ void client_loop() {
   
   conn_base();
 
+  sleep(1);
   printf("kvs > ");
   while (1) {
     char sendline[MAXLINE] = "";
@@ -56,12 +59,10 @@ void client_loop() {
     if (fgets(sendline, MAXLINE - 2, stdin) == NULL) break;
     sendline[strlen(sendline) - 1] = '\0';
     strcat(sendline, "\r\n");
-    Write(sockfds[0], sendline, strlen(sendline));
-	for (i = 0; i < 10; i++) {
-		printf("%d over?\n", sockfds[i]);
-	}
+	printf("%d 接收\n", sockfds[0]);
+    Write(sockfds[1], sendline, strlen(sendline));
   }
-  shutdown(sockfds[0], SHUT_WR);
+  shutdown(sockfds[1], SHUT_WR);
   
   /*
   while(1) {
@@ -79,20 +80,55 @@ void client_loop() {
 	*/
 }
 
+int servlist_init() {
+  int i = 0;
+  FILE *fp;
+  char *buf, *p;
+
+  if ((fp = fopen("server.conf","r")) == NULL) {
+    printf("Cannot open file!\n");
+    exit(0);
+  }
+
+  buf = (char *)malloc(LINE*sizeof(char));
+  p = fgets(buf, LINE, fp);  //将每行的内容读到buf中
+
+  while (p) {
+	strcpy(servlist[i], p); i++;
+    p = fgets(buf, LINE, fp);  //指针移到下一行
+  }
+
+  fclose(fp);
+
+  return i;
+}
+
 void conn_base() {
+  int i, servnum;
+  char s[] = "                        ";
+  char *d = " ";
+  struct thread_p thread_pt[256];
   pthread_t tid;
 
-  struct thread_p thread_pt[256];
-  thread_pt[0].threadnum = 1;
-  thread_pt[1].threadnum = 2;
-  thread_pt[2].threadnum = 3;
-  thread_pt[0].port = 7001;
-  thread_pt[1].port = 7002;
-  thread_pt[2].port = 7003;
+  servnum = servlist_init();
+  for (i = 0; i < servnum; i++) {
+	char *next = NULL;
+	char *tmp = NULL;
+    strcpy(s, servlist[i]);
+	//切割第一次
+	next = strtok_r(s, d, &tmp);
+    thread_pt[i].threadnum = i;	  
+    thread_pt[i].addr = next;
+	//切割第二次
+	next = strtok_r(NULL, d, &tmp);
+	thread_pt[i].port = atoi(next);
+	//printf("%s on %d\n", thread_pt[i].addr, thread_pt[i].port);
 
-  Pthread_create(&tid, NULL, process, (void *)&thread_pt[0]);
-  Pthread_create(&tid, NULL, process, (void *)&thread_pt[1]);
-  Pthread_create(&tid, NULL, process, (void *)&thread_pt[2]);
+	//创建线程来连接服务器
+	Pthread_create(&tid, NULL, process, (void *)&thread_pt[i]);
+  }
+  
+  //Pthread_create(&tid, NULL, process, (void *)&thread_pt[0]);
 }
 
 /* サーバー ⇐ 標準入力 */
@@ -134,29 +170,35 @@ int conn_new(char *host, int port) {
   printf("connecting to server %s:%d\n", hptr->h_name, port);
   Connect(connfd, &servaddr, sizeof(servaddr));
   //socknum ++; //在process中加锁
-  printf("socknum has %d\n", socknum);
+  //printf("socknum has %d\n", socknum);
   return connfd;
 }
 
 /* 本処理 */
 void *process(void *arg) {
-  int n;
+  int n, i, num;
   struct thread_p *thread_pt = (struct thread_p *) arg;
+  char *host = thread_pt->addr;
   int port = thread_pt->port;
+
+  //printf("%s---%d---%s\n", host, port, settings.host);
   //Pthread_create(&tid, NULL, send_msg, NULL);
   
   //Pthread_mutex_lock(&mutex);
   sockfd = conn_new(settings.host, port);
   //socknum ++;
-  num = thread_pt->threadnum - 1;
+  num = thread_pt->threadnum + 1;
   sockfds[num] = sockfd;
-  printf("process goes %d times\n sock %d here\n", num, sockfd);
+  printf("process goes %d times\n sock %d here\n", num, sockfds[num]);
   //Pthread_mutex_unlock(&mutex);
 
   /* サーバー ⇒ 標準出力 */
   while (1) {
     char recvline[MAXLINE] = "";
-	printf("%d is ready\n", num);
+	//for (i = 0; i < 5; i++) {
+	//	printf("%d ------> %d over?\n", num, sockfds[i]);
+	//}
+	printf("sock %d with %d is ready\n", sockfds[num], num);
     if ((n = read(sockfds[num], recvline, MAXLINE)) == 0) break;
     fputs(recvline, stdout);
 	printf("---------------- %d socks ----------------\n", socknum);
@@ -200,6 +242,7 @@ int main(int argc, char **argv) {
   }
 
   client_loop();
+  //servlist_init();
 
   /*
   hash_ring_t *ring = hash_ring_create(8, HASH_FUNCTION_SHA1);
